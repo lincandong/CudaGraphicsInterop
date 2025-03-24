@@ -6,6 +6,7 @@
 #include <iostream>
 #include <memory>
 #include <exception>
+#include <string>
 
 // CUDA error checking macro
 #define CUDA_CHECK(call) do { \
@@ -47,7 +48,8 @@ protected:
     cudaDeviceProp cudaDevProp;
     cudaStream_t m_streamToRun;
     
-    // Texture dimensions
+    // Texture description
+    std::string resourceName;
     int width = 0;
     int height = 0;
     int rowPitch = 0;
@@ -55,7 +57,7 @@ protected:
     
     // in order execution
     virtual bool initialize(std::string& resourceName, int textureWidth, int textureHeight) = 0;
-    virtual bool importTextureToCuda(std::string& resourceName) = 0;
+    virtual bool importTextureToCuda() = 0;
     virtual std::vector<glm::vec3> extractTextureData() = 0;
     virtual void cleanup(){};
 };

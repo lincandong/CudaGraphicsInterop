@@ -1,4 +1,7 @@
 #pragma once
+
+#ifdef ENABLE_D3D12
+
 #include <windows.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
@@ -40,3 +43,4 @@ private:
     bool initD3D12Device();
     bool ConvertD3D12TextureToLinearBuffer(ID3D12Device* device, ID3D12Resource* sharedResource, int width, int height, cudaExternalMemory_t& extMemory, void** devicePtr);
 };
+#endif

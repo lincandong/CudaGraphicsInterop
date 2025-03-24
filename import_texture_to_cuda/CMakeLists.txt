@@ -20,5 +20,15 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 )
 endif()
 
+if (ENABLE_VULKAN)
+find_package(Vulkan REQUIRED)
+target_include_directories(${PROJECT_NAME} PUBLIC
+    ${Vulkan_INCLUDE_DIRS}
+)
+target_link_libraries(${PROJECT_NAME} PUBLIC
+    ${Vulkan_LIBRARIES}
+)
+endif()
+
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=sm_80")
 set_target_properties(${PROJECT_NAME} PROPERTIES CUDA_ARCHITECTURES "80")

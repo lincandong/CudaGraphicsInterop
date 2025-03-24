@@ -1,4 +1,6 @@
 #include "TextureExtractorD3D12.h"
+
+#ifdef ENABLE_D3D12
 #include "d3d12_helper.h"
 
 bool ReadbackD3D12Texture(ID3D12Device* device, ID3D12Resource* sharedResource, int textureWidth, int textureHeight, std::vector<glm::vec3>& result) {
@@ -358,7 +360,8 @@ bool TextureExtractorD3D12::ConvertD3D12TextureToLinearBuffer(ID3D12Device* devi
     return true;
 }
 
-bool TextureExtractorD3D12::initialize(std::string& resourceName, int textureWidth, int textureHeight) {
+bool TextureExtractorD3D12::initialize(std::string& resName, int textureWidth, int textureHeight) {
+    resourceName = resName;
     width = textureWidth;
     height = textureHeight;
 
@@ -366,7 +369,7 @@ bool TextureExtractorD3D12::initialize(std::string& resourceName, int textureWid
     if (!initD3D12Device()) return false;
 
     // Import texture to CUDA
-    return importTextureToCuda(resourceName);
+    return importTextureToCuda();
 }
 
 _Use_decl_annotations_ void GetHardwareAdapter(
@@ -605,7 +608,7 @@ struct TextureCopyContext
 };
 
 static std::vector<glm::vec3> m_textureData;
-bool TextureExtractorD3D12::importTextureToCuda(std::string& resourceName) {
+bool TextureExtractorD3D12::importTextureToCuda() {
 
     const auto wResourceName = std::wstring(resourceName.begin(), resourceName.end());
     D3D_CHECK(d3dDevice->OpenSharedHandleByName(
@@ -672,14 +675,14 @@ std::vector<glm::vec3> TextureExtractorD3D12::extractTextureData() {
     glm::vec3* d_rgb = nullptr;
     CUDA_CHECK(cudaMalloc(&d_rgb, width * height * sizeof(glm::vec3)));
 
-    cudaResourceDesc resDesc = {};
-    memset(&resDesc, 0, sizeof(resDesc));
-
+    cudaArray_t cuArray;
     cudaChannelFormatDesc channelDesc =
         cudaCreateChannelDesc(10, 10, 10, 2, cudaChannelFormatKindUnsignedNormalized1010102);
-    cudaArray_t cuArray;
     cudaMallocArray(&cuArray, &channelDesc, width, height);
-    CUDA_CHECK(cudaMemcpyToArray(cuArray, 0, 0, devicePtr, width*height*sizeof(uint32_t), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpyToArray(cuArray, 0, 0, devicePtr, width*height*sizeof(uint32_t), cudaMemcpyDeviceToDevice));
+
+    cudaResourceDesc resDesc = {};
+    memset(&resDesc, 0, sizeof(resDesc));
     resDesc.resType = cudaResourceTypeArray;
     resDesc.res.array.array = cuArray;
 
@@ -768,3 +771,5 @@ void TextureExtractorD3D12::cleanup() {
     
     d3dDevice = nullptr;
 }
+
+#endif

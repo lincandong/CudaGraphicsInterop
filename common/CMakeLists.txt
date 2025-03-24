@@ -18,3 +18,12 @@ if (WIN32 AND ENABLE_D3D12)
         CACHE INTERNAL ""
     )
 endif()
+
+if (ENABLE_VULKAN)
+    set(COMMON_SOURCES
+        ${COMMON_SOURCES}
+        ${PROJECT_SOURCE_DIR}/common/vulkan/TextureExtractorVulkan.h
+        ${PROJECT_SOURCE_DIR}/common/vulkan/TextureExtractorVulkan.cu
+        CACHE INTERNAL ""
+    )
+endif()
