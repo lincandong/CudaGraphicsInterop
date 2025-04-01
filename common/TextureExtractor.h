@@ -19,6 +19,12 @@
     } \
 } while(0)
 
+enum class TextureFormat
+{
+    RGB10A2,
+    RGBA8
+};
+
 enum class ExtractorAPI {
     D3D12,
     VULKAN
@@ -27,7 +33,7 @@ enum class ExtractorAPI {
 class TextureExtractor {
 public:
     virtual ExtractorAPI GetAPIType() = 0;
-    TextureExtractor() = default;
+    TextureExtractor(std::string& resName, TextureFormat textureFormat, int textureWidth, int textureHeight, int textureBytes);
     virtual ~TextureExtractor() { cleanup(); };
     
     // Deleted copy/move operations
@@ -35,30 +41,29 @@ public:
     TextureExtractor& operator=(const TextureExtractor&) = delete;
     TextureExtractor(TextureExtractor&&) = delete;
     TextureExtractor& operator=(TextureExtractor&&) = delete;
-    
-    // Extract RGB texture data from D3D12 shared handle
-    std::vector<glm::vec3> extract(std::string& resourceName, int width, int height);
+
+    virtual bool importTextureToCuda() = 0;
+    std::vector<glm::vec3> extractTextureData();
 
 protected:
+    bool deviceInitialized = false;
+
     // CUDA objects
     void* devicePtr = nullptr;
     cudaMipmappedArray_t mipArray = nullptr;
     cudaExternalMemory_t extMemory = nullptr;
     cudaArray_t cudaResource = nullptr;
     cudaDeviceProp cudaDevProp;
-    cudaStream_t m_streamToRun;
     
-    // Texture description
+    // Texture description, should be determined at initliazation
     std::string resourceName;
+    TextureFormat format;
     int width = 0;
     int height = 0;
-    int rowPitch = 0;
     int totalBytes = 0;
-    
+
     // in order execution
-    virtual bool initialize(std::string& resourceName, int textureWidth, int textureHeight) = 0;
-    virtual bool importTextureToCuda() = 0;
-    virtual std::vector<glm::vec3> extractTextureData() = 0;
+    virtual bool initDevice() = 0; // should set deviceInitialized to true if successful
     virtual void cleanup(){};
 };
 

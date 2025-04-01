@@ -17,22 +17,35 @@ int main() {
         // Hardcoded parameters
         int width = 1510;
         int height = 726;
-        std::string resourceName = "MyTestD3DTexture2";
-        
-        // Set CUDA device
-        cudaSetDevice(0);
+        int totalBytes = 4390912;
+        TextureFormat format = TextureFormat::RGB10A2;
+        std::string resourceName = "MyTestD3DTexture3";
         
         // Extract texture data
 #ifdef ENABLE_D3D12
-        TextureExtractorD3D12 extractor;
+        TextureExtractorD3D12 extractor(resourceName, format, width, height, totalBytes);
         std::string outputFile = resourceName + "_d3d12.ppm";
 #elif ENABLE_VULKAN
+        TextureExtractorVulkan extractor(resourceName, format, width, height, totalBytes);
         std::string outputFile = resourceName + "_vulkan.ppm";
-        TextureExtractorVulkan extractor;
 #endif
-        std::vector<glm::vec3> textureData = extractor.extract(resourceName, width, height);
 
-        if (textureData.empty()) {
+        // // initialize the texture extractor
+        // if (!extractor.initDevice()) {
+        //     std::cerr << "Failed to initialize texture extraction" << std::endl;
+        //     return 1;
+        // }
+
+        // import graphics buffer to cuda
+        if (!extractor.importTextureToCuda()) {
+            std::cerr << "Failed to initialize texture extraction" << std::endl;
+            return 1;
+        }
+
+        // extract texture data from cuda buffer
+        std::vector<glm::vec3> textureData = extractor.extractTextureData();
+
+        if (textureData.empty() ) {
             std::cerr << "Failed to extract texture data" << std::endl;
             return 1;
         }

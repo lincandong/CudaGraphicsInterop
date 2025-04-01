@@ -155,11 +155,6 @@ bool ReadbackD3D12Texture(ID3D12Device* device, ID3D12Resource* sharedResource, 
     return true;
 }
 
-UINT m_rowPitch;
-UINT64 m_totalBufferSize;
-HANDLE m_linearBufferHandle;
-ComPtr<ID3D12Resource> m_linearBuffer;
-
 bool TextureExtractorD3D12::ConvertD3D12TextureToLinearBuffer(ID3D12Device* device, ID3D12Resource* sharedResource, int width, int height, cudaExternalMemory_t& extMemory, void** devicePtr) {
     HRESULT hr;
     
@@ -351,25 +346,15 @@ bool TextureExtractorD3D12::ConvertD3D12TextureToLinearBuffer(ID3D12Device* devi
     
     CUDA_CHECK(cudaExternalMemoryGetMappedBuffer(devicePtr, extMemory, &bufferMemDesc));
     
-    // Save the rowPitch for later use
-    this->rowPitch = footprint.Footprint.RowPitch;
-    this->totalBytes = totalBytes;
     this->sharedHandle = sharedBufferHandle;
     this->stagingBuffer = stagingBuffer; // Keep reference to prevent release
     
     return true;
 }
 
-bool TextureExtractorD3D12::initialize(std::string& resName, int textureWidth, int textureHeight) {
-    resourceName = resName;
-    width = textureWidth;
-    height = textureHeight;
+TextureExtractorD3D12::TextureExtractorD3D12(std::string& resName, TextureFormat textureFormat, int textureWidth, int textureHeight, int textureBytes) : TextureExtractor(resName, textureFormat, textureWidth, textureHeight, textureBytes) 
+{
 
-    // Initialize D3D12 device
-    if (!initD3D12Device()) return false;
-
-    // Import texture to CUDA
-    return importTextureToCuda();
 }
 
 _Use_decl_annotations_ void GetHardwareAdapter(
@@ -540,8 +525,7 @@ bool CheckTextureLayoutSupport(ID3D12Device* pDevice)
     }
 }
 
-bool g_useWarpDevice = false;
-bool TextureExtractorD3D12::initD3D12Device() {
+bool TextureExtractorD3D12::initDevice() {
     UINT dxgiFactoryFlags = 0;
 
     // Enable debug layer in debug mode
@@ -554,6 +538,7 @@ bool TextureExtractorD3D12::initD3D12Device() {
 
     ComPtr<IDXGIFactory4> factory;
     D3D_CHECK(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&factory)));
+    const bool g_useWarpDevice = false;
     if (g_useWarpDevice) {
         ComPtr<IDXGIAdapter> warpAdapter;
         D3D_CHECK(factory->EnumWarpAdapter(IID_PPV_ARGS(&warpAdapter)));
@@ -607,8 +592,13 @@ struct TextureCopyContext
     UINT64 rowSizeInBytes;
 };
 
-static std::vector<glm::vec3> m_textureData;
-bool TextureExtractorD3D12::importTextureToCuda() {
+bool TextureExtractorD3D12::importTextureToCuda() 
+{
+    if (!deviceInitialized)
+    {
+        std::cerr << "device not initialized yet" << std::endl;
+        return false;
+    }
 
     const auto wResourceName = std::wstring(resourceName.begin(), resourceName.end());
     D3D_CHECK(d3dDevice->OpenSharedHandleByName(
@@ -623,11 +613,8 @@ bool TextureExtractorD3D12::importTextureToCuda() {
     ComPtr<ID3D12Resource> sharedResource;
     D3D_CHECK(d3dDevice->OpenSharedHandle(sharedHandle, IID_PPV_ARGS(&sharedResource)));
 
-    TextureCopyContext copyContext(d3dDevice.Get(), sharedResource.Get());
-    rowPitch = copyContext.rowSizeInBytes;
-    totalBytes = copyContext.totalBytes;
-
     // // Readback the texture data for reference
+    // static std::vector<glm::vec3> m_textureData;
     // m_textureData.clear();
     // ReadbackD3D12Texture(d3dDevice.Get(), sharedResource.Get(), width, height, m_textureData);
 
@@ -636,8 +623,6 @@ bool TextureExtractorD3D12::importTextureToCuda() {
     // {
     //     return false;
     // }
-    // rowPitch = m_rowPitch;
-    // totalBytes = m_totalBufferSize;
 
     // Setup external memory descriptor
     cudaExternalMemoryHandleDesc extMemDesc = {};
@@ -652,7 +637,7 @@ bool TextureExtractorD3D12::importTextureToCuda() {
     cudaExternalMemoryBufferDesc bufferDesc = {};
     memset(&bufferDesc, 0, sizeof(bufferDesc));
     bufferDesc.offset = 0;
-    bufferDesc.size = totalBytes; // Assuming RGBA8
+    bufferDesc.size = totalBytes;
     bufferDesc.flags = 0;
     CUDA_CHECK(cudaExternalMemoryGetMappedBuffer(&devicePtr, extMemory, &bufferDesc));
 
@@ -666,79 +651,6 @@ bool TextureExtractorD3D12::importTextureToCuda() {
     // CUDA_CHECK(cudaExternalMemoryGetMappedMipmappedArray(&mipArray, extMemory, &mipmappedArrayDesc));
 
     return true;
-}
-
-std::vector<glm::vec3> TextureExtractorD3D12::extractTextureData() {
-    std::vector<glm::vec3> result(width * height);
-
-    // Allocate device memory
-    glm::vec3* d_rgb = nullptr;
-    CUDA_CHECK(cudaMalloc(&d_rgb, width * height * sizeof(glm::vec3)));
-
-    cudaArray_t cuArray;
-    cudaChannelFormatDesc channelDesc =
-        cudaCreateChannelDesc(10, 10, 10, 2, cudaChannelFormatKindUnsignedNormalized1010102);
-    cudaMallocArray(&cuArray, &channelDesc, width, height);
-    CUDA_CHECK(cudaMemcpyToArray(cuArray, 0, 0, devicePtr, width*height*sizeof(uint32_t), cudaMemcpyDeviceToDevice));
-
-    cudaResourceDesc resDesc = {};
-    memset(&resDesc, 0, sizeof(resDesc));
-    resDesc.resType = cudaResourceTypeArray;
-    resDesc.res.array.array = cuArray;
-
-    // cudaArray_t baseArray;
-    // CUDA_CHECK(cudaGetMipmappedArrayLevel(&baseArray, mipArray, 0));
-    // resDesc.resType = cudaResourceTypeArray;
-    // resDesc.res.array.array = baseArray;
-
-    // resDesc.resType = cudaResourceTypeMipmappedArray;
-    // resDesc.res.mipmap.mipmap = mipArray;
-
-    // resDesc.resType = cudaResourceTypePitch2D;
-    // resDesc.res.pitch2D.desc = cudaCreateChannelDesc(10, 10, 10, 2, cudaChannelFormatKindUnsignedNormalized1010102);
-    // resDesc.res.pitch2D.devPtr = devicePtr;
-    // resDesc.res.pitch2D.width = width;
-    // resDesc.res.pitch2D.height = height;
-    // // resDesc.res.pitch2D.pitchInBytes = rowPitch;
-    // // resDesc.res.pitch2D.pitchInBytes = (width+2) * sizeof(uint32_t);
-    // resDesc.res.pitch2D.pitchInBytes = (width) * sizeof(uint32_t);
-    // // resDesc.res.pitch2D.pitchInBytes = (width+2);
-
-    // resDesc.resType = cudaResourceTypeLinear;
-    // resDesc.res.linear.desc = cudaCreateChannelDesc(10, 10, 10, 2, cudaChannelFormatKindUnsignedNormalized1010102);
-    // resDesc.res.linear.devPtr = devicePtr;
-    // // resDesc.res.linear.sizeInBytes = totalBytes;
-    // resDesc.res.linear.sizeInBytes = width * height * sizeof(uint32_t);
-
-    cudaTextureDesc texDesc = {};
-    memset(&texDesc, 0, sizeof(texDesc));
-    texDesc.addressMode[0] = cudaAddressModeClamp;
-    texDesc.addressMode[1] = cudaAddressModeClamp;
-    texDesc.addressMode[2] = cudaAddressModeClamp;
-    texDesc.filterMode = cudaFilterModePoint;     // No filtering
-    texDesc.readMode = cudaReadModeElementType;   // Read raw values
-    texDesc.normalizedCoords = 0;                 // Use integer coordinates for fetch
-
-    cudaTextureObject_t texObj = 0;
-    CUDA_CHECK(cudaCreateTextureObject(&texObj, &resDesc, &texDesc, nullptr));
-
-    // Launch conversion kernel
-    dim3 threads(16, 16);
-    dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
-    unpackRGB10A2Kernel<<<blocks, threads>>>(texObj, d_rgb, width, height);
-
-    // dim3 threads(16, 16);
-    // dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
-    // unpackRGB10A2RawKernel<<<blocks, threads>>>((uint32_t*)devicePtr, d_rgb, width, height);
-    
-    // Copy result back to host
-    CUDA_CHECK(cudaDeviceSynchronize());
-    CUDA_CHECK(cudaMemcpy(result.data(), d_rgb, width * height * sizeof(glm::vec3), cudaMemcpyDeviceToHost));
-    
-    // Clean up device memory
-    cudaFree(d_rgb);
-    
-    return result;
 }
 
 void TextureExtractorD3D12::cleanup() {
