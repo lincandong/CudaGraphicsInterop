@@ -18,7 +18,7 @@ using Microsoft::WRL::ComPtr;
 class TextureExtractorD3D12 : public TextureExtractor {
 public:
     TextureExtractorD3D12(std::string& resName, TextureFormat textureFormat, int textureWidth, int textureHeight, int textureBytes);
-    ~TextureExtractorD3D12() = default;
+    ~TextureExtractorD3D12(){ cleanup(); };
     ExtractorAPI GetAPIType() override { return ExtractorAPI::D3D12; };
 
     bool importTextureToCuda() override;
@@ -31,7 +31,7 @@ private:
     ComPtr<ID3D12Device> d3dDevice;
     UINT m_cudaDeviceID;
     UINT m_nodeMask;
-    bool initDevice() override;
+    bool initialize() override;
     void cleanDevice();
 
     // shared interface    

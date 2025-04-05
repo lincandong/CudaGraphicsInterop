@@ -17,8 +17,8 @@ int main() {
         // Hardcoded parameters
         int width = 1510;
         int height = 726;
-        int totalBytes = 4390912;
-        TextureFormat format = TextureFormat::RGB10A2;
+        int totalBytes = 17563648;
+        TextureFormat format = TextureFormat::RGBA32;
         std::string resourceName = "MyTestD3DTexture3";
         
         // Extract texture data
@@ -31,7 +31,7 @@ int main() {
 #endif
 
         // // initialize the texture extractor
-        // if (!extractor.initDevice()) {
+        // if (!extractor.initialize()) {
         //     std::cerr << "Failed to initialize texture extraction" << std::endl;
         //     return 1;
         // }

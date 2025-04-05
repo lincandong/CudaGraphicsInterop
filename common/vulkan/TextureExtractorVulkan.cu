@@ -19,7 +19,7 @@ TextureExtractorVulkan::TextureExtractorVulkan(std::string& resName, TextureForm
     
 }
 
-bool TextureExtractorVulkan::initDevice() {
+bool TextureExtractorVulkan::initialize() {
     // Create Vulkan instance
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -148,14 +148,6 @@ uint32_t FindMemoryType(
         // First check if this memory type satisfies our basic requirements
         if ((typeFilter & (1 << i)) && 
             (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            
-            // // For external memory, we can't easily query per memory type compatibility,
-            // // so we'll assume it's compatible if it meets our basic requirements
-            // std::cout << "Found suitable memory type: " << i << std::endl;
-            // std::cout << "Memory heap index: " << memProperties.memoryTypes[i].heapIndex << std::endl;
-            // std::cout << "Memory heap size: " << 
-            //     memProperties.memoryHeaps[memProperties.memoryTypes[i].heapIndex].size / (1024 * 1024) << 
-            //     " MB" << std::endl;
             return i;
         }
     }
@@ -219,7 +211,6 @@ VkResult ImportExternalMemory(
     uint32_t memoryTypeIndex = FindMemoryType(
         VulkanPhysicalDevice,
         0xFFFFFFFF,  // All memory types
-        // VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
     allocInfo.memoryTypeIndex = memoryTypeIndex; // Replace with actual memory type index
@@ -227,47 +218,56 @@ VkResult ImportExternalMemory(
 #ifdef _WIN32
     // Windows implementation using Win32 handles
     
-    // read handle value from the file
-    HANDLE remoteHandle;
-    if (!OpenWindowsFileAndReadContent(ResName, &remoteHandle, sizeof(HANDLE)) ) {
-        std::cerr << "Failed to open shared resource file: " << ResName << std::endl;
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    DWORD exportingProcessId = 73716;
-    // if (!OpenWindowsFileAndReadContent(ResName, &exportingProcessId, sizeof(DWORD)) ) {
-    //     std::cerr << "Failed to open source process id: " << ResName << std::endl;
-    //     return VK_ERROR_INITIALIZATION_FAILED;
-    // }
-
-    // Map remote handle to local handle
-    // First get the process handle of the exporting process
-    HANDLE exportingProcessHandle = OpenProcess(PROCESS_DUP_HANDLE, FALSE, exportingProcessId);
-    // Then duplicate the actual Vulkan memory handle
-    HANDLE localHandle = NULL;
-    DuplicateHandle(
-        exportingProcessHandle,    // Source process (handle to Process A)
-        remoteHandle,              // The handle in Process A that we want to duplicate
-        GetCurrentProcess(),       // Destination process (current process, i.e., Process B)
-        &localHandle,              // Output: the new handle in Process B
-        0,
-        FALSE,
-        DUPLICATE_SAME_ACCESS
-    );
-    if (localHandle == NULL) {
-        std::cerr << "Failed to duplicate handle from process: " << ResName << std::endl;
-        return VK_ERROR_INITIALIZATION_FAILED;
-    }
-    externalMemoryHandle = localHandle;
-
     // Setup import info for Windows
     VkImportMemoryWin32HandleInfoKHR importInfo = {};
     importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR;
     importInfo.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT_KHR;
-    importInfo.handle = externalMemoryHandle;
-    importInfo.name = nullptr;
-    importInfo.pNext = nullptr;
+
+    // todo: we now use texture name to export/import resource, should consider delete the following code
+    if (false)
+    {
+        // read handle value from the file
+        HANDLE remoteHandle;
+        if (!OpenWindowsFileAndReadContent(ResName, &remoteHandle, sizeof(HANDLE)) ) {
+            std::cerr << "Failed to open shared resource file: " << ResName << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        DWORD exportingProcessId = 67840;
+        // if (!OpenWindowsFileAndReadContent(ResName, &exportingProcessId, sizeof(DWORD)) ) {
+        //     std::cerr << "Failed to open source process id: " << ResName << std::endl;
+        //     return VK_ERROR_INITIALIZATION_FAILED;
+        // }
+
+        // Map remote handle to local handle
+        // First get the process handle of the exporting process
+        HANDLE exportingProcessHandle = OpenProcess(PROCESS_DUP_HANDLE, FALSE, exportingProcessId);
+        // Then duplicate the actual Vulkan memory handle
+        HANDLE localHandle = NULL;
+        DuplicateHandle(
+            exportingProcessHandle,    // Source process (handle to Process A)
+            remoteHandle,              // The handle in Process A that we want to duplicate
+            GetCurrentProcess(),       // Destination process (current process, i.e., Process B)
+            &localHandle,              // Output: the new handle in Process B
+            0,
+            FALSE,
+            DUPLICATE_SAME_ACCESS
+        );
+        if (localHandle == NULL) {
+            std::cerr << "Failed to duplicate handle from process: " << ResName << std::endl;
+            return VK_ERROR_INITIALIZATION_FAILED;
+        }
+        externalMemoryHandle = localHandle;
+        
+        importInfo.handle = externalMemoryHandle;
+        importInfo.name = nullptr;
+    }
+
+    importInfo.handle = nullptr;
+    const auto wResourceName = std::wstring(ResName.begin(), ResName.end());
+    importInfo.name = wResourceName.c_str();
     
     // Chain the import info to allocation info
+    importInfo.pNext = nullptr;
     allocInfo.pNext = &importInfo;
     
     // Allocate the memory
@@ -308,9 +308,9 @@ VkResult ImportExternalMemory(
 
 bool TextureExtractorVulkan::importTextureToCuda() 
 {
-    deviceInitialized = initDevice(); // todo: should be called only once for all instances
+    initialized = initialize(); // todo: should be called only once for all instances
 
-    if (!deviceInitialized)
+    if (!initialized)
     {
         std::cerr << "device not initialized yet" << std::endl;
         return false;
@@ -326,7 +326,9 @@ bool TextureExtractorVulkan::importTextureToCuda()
     cudaExternalMemoryHandleDesc externalMemoryHandleDesc = {};
 #ifdef _WIN32
     externalMemoryHandleDesc.type = cudaExternalMemoryHandleTypeOpaqueWin32;
-    externalMemoryHandleDesc.handle.win32.handle = externalMemoryHandle;
+    // externalMemoryHandleDesc.handle.win32.handle = externalMemoryHandle;
+    const auto wResourceName = std::wstring(resourceName.begin(), resourceName.end());
+    externalMemoryHandleDesc.handle.win32.name = wResourceName.c_str();
 #else
     externalMemoryHandleDesc.type = cudaExternalMemoryHandleTypeOpaqueFd;
     externalMemoryHandleDesc.handle.fd = externalMemoryHandle;
@@ -355,21 +357,22 @@ void TextureExtractorVulkan::cleanup() {
        cudaFree(devicePtr);
        devicePtr = nullptr;
    }
-
-   if (device != VK_NULL_HANDLE) {
-       vkDestroyDevice(device, nullptr);
-       device = VK_NULL_HANDLE;
-   }
    
-   if (instance != VK_NULL_HANDLE) {
-       vkDestroyInstance(instance, nullptr);
-       instance = VK_NULL_HANDLE;
-   }
-   
+   // Clean up Vulkan resources
    if (externalMemory != VK_NULL_HANDLE) {
        vkFreeMemory(device, externalMemory, nullptr);
        externalMemory = VK_NULL_HANDLE;
    }
+   if (device != VK_NULL_HANDLE) {
+       vkDestroyDevice(device, nullptr);
+       device = VK_NULL_HANDLE;
+   }
+   if (instance != VK_NULL_HANDLE) {
+       vkDestroyInstance(instance, nullptr);
+       instance = VK_NULL_HANDLE;
+   }
+
+    // Clean up external memory handle
 #ifdef _WIN32
    if (externalMemoryHandle != nullptr) {
        CloseHandle(externalMemoryHandle);

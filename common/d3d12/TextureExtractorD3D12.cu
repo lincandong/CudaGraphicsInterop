@@ -525,7 +525,7 @@ bool CheckTextureLayoutSupport(ID3D12Device* pDevice)
     }
 }
 
-bool TextureExtractorD3D12::initDevice() {
+bool TextureExtractorD3D12::initialize() {
     UINT dxgiFactoryFlags = 0;
 
     // Enable debug layer in debug mode
@@ -594,7 +594,7 @@ struct TextureCopyContext
 
 bool TextureExtractorD3D12::importTextureToCuda() 
 {
-    if (!deviceInitialized)
+    if (!initialized)
     {
         std::cerr << "device not initialized yet" << std::endl;
         return false;

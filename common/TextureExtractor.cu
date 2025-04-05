@@ -10,6 +10,9 @@ cudaChannelFormatDesc GetChannelDesc(TextureFormat format) {
             return cudaCreateChannelDesc(8, 8, 8, 8, cudaChannelFormatKindUnsigned);
         case TextureFormat::RGB10A2:
             return cudaCreateChannelDesc(10, 10, 10, 2, cudaChannelFormatKindUnsignedNormalized1010102);
+        case TextureFormat::RGBA32:
+            // return cudaCreateChannelDesc(10, 10, 10, 2, cudaChannelFormatKindUnsignedNormalized1010102);
+            return cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
         default:
             throw std::runtime_error("Invalid channel format");
     }
@@ -22,6 +25,8 @@ size_t GetChannelSize(TextureFormat format) {
             return 4;
         case TextureFormat::RGB10A2:
             return 4;
+        case TextureFormat::RGBA32:
+            return 4 * 4;
         default:
             throw std::runtime_error("Invalid channel format");
     }
@@ -37,7 +42,7 @@ TextureExtractor::TextureExtractor(std::string& resName, TextureFormat textureFo
 }
 
 std::vector<glm::vec3> TextureExtractor::extractTextureData() {
-    if (!deviceInitialized) {
+    if (!initialized) {
         return {};
     }
 
@@ -97,11 +102,16 @@ std::vector<glm::vec3> TextureExtractor::extractTextureData() {
     // Launch conversion kernel
     dim3 threads(16, 16);
     dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
-    unpackRGB10A2Kernel<<<blocks, threads>>>(texObj, d_rgb, width, height);
+    unpackRGB32Kernel<<<blocks, threads>>>(texObj, d_rgb, width, height);
 
-    // dim3 threads(16, 16);
-    // dim3 blocks((width + threads.x - 1) / threads.x, (height + threads.y - 1) / threads.y);
-    // unpackRGB10A2RawKernel<<<blocks, threads>>>((uint32_t*)devicePtr, d_rgb, width, height);
+    // if (packed)
+    // {
+    //     unpackRGB10A2PackedKernel<<<blocks, threads>>>((uint32_t*)devicePtr, d_rgb, width, height);
+    // }
+    // else
+    // {
+    //     unpackRGB32Kernel<<<blocks, threads>>>(texObj, d_rgb, width, height);
+    // }
     
     // Copy result back to host
     CUDA_CHECK(cudaDeviceSynchronize());
@@ -113,7 +123,7 @@ std::vector<glm::vec3> TextureExtractor::extractTextureData() {
     return result;
 }
 
-__global__ void unpackRGB10A2Kernel(cudaTextureObject_t texObj, glm::vec3* output, int width, int height) {
+__global__ void unpackRGB32Kernel(cudaTextureObject_t texObj, glm::vec3* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -124,7 +134,7 @@ __global__ void unpackRGB10A2Kernel(cudaTextureObject_t texObj, glm::vec3* outpu
     }
 }
 
-__global__ void unpackRGB10A2RawKernel(uint32_t* data, glm::vec3* output, int width, int height) {
+__global__ void unpackRGB10A2PackedKernel(uint32_t* data, glm::vec3* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     

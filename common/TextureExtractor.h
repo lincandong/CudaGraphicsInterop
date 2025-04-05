@@ -22,7 +22,8 @@
 enum class TextureFormat
 {
     RGB10A2,
-    RGBA8
+    RGBA8,
+    RGBA32
 };
 
 enum class ExtractorAPI {
@@ -34,7 +35,7 @@ class TextureExtractor {
 public:
     virtual ExtractorAPI GetAPIType() = 0;
     TextureExtractor(std::string& resName, TextureFormat textureFormat, int textureWidth, int textureHeight, int textureBytes);
-    virtual ~TextureExtractor() { cleanup(); };
+    virtual ~TextureExtractor(){};
     
     // Deleted copy/move operations
     TextureExtractor(const TextureExtractor&) = delete;
@@ -42,11 +43,21 @@ public:
     TextureExtractor(TextureExtractor&&) = delete;
     TextureExtractor& operator=(TextureExtractor&&) = delete;
 
+    // initialized before importing texture to cuda
+    virtual bool initialize() = 0;
+    // cleanup in destructor
+    virtual void cleanup() = 0;
+
+    // if initialized, call this to import external texture and store it as devicePtr
     virtual bool importTextureToCuda() = 0;
+
+    void* getDevicePtr() const { return devicePtr; }
+
+    // a helper function to extract texture data from devicePtr
     std::vector<glm::vec3> extractTextureData();
 
 protected:
-    bool deviceInitialized = false;
+    bool initialized = false;
 
     // CUDA objects
     void* devicePtr = nullptr;
@@ -61,12 +72,9 @@ protected:
     int width = 0;
     int height = 0;
     int totalBytes = 0;
-
-    // in order execution
-    virtual bool initDevice() = 0; // should set deviceInitialized to true if successful
-    virtual void cleanup(){};
+    bool packed = false; // if the buffer is packed as uint or simply float
 };
 
 // decode kernels
-__global__ void unpackRGB10A2Kernel(cudaTextureObject_t texObj, glm::vec3* output, int width, int height);
-__global__ void unpackRGB10A2RawKernel(uint32_t* data, glm::vec3* output, int width, int height);
+__global__ void unpackRGB32Kernel(cudaTextureObject_t texObj, glm::vec3* output, int width, int height);
+__global__ void unpackRGB10A2PackedKernel(uint32_t* data, glm::vec3* output, int width, int height);

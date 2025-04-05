@@ -19,7 +19,7 @@
 class TextureExtractorVulkan : public TextureExtractor {
 public:
     TextureExtractorVulkan(std::string& resName, TextureFormat textureFormat, int textureWidth, int textureHeight, int textureBytes);
-    ~TextureExtractorVulkan() = default;
+    ~TextureExtractorVulkan(){ cleanup(); };
     ExtractorAPI GetAPIType() override { return ExtractorAPI::VULKAN; };
 
     bool importTextureToCuda() override;
@@ -39,7 +39,7 @@ private:
     uint32_t cudaDeviceID = 0;
 
     // shared interface    
-    bool initDevice() override;
+    bool initialize() override;
     void cleanup() override;
 };
 
